@@ -7,11 +7,21 @@ from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime
 import os
+import logging
+import threading
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Trading Signals API", version="0.1.0")
+
+# Get environment variables
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # ===== DATA MODELS =====
 
@@ -52,6 +62,33 @@ watchlists: Dict[str, List[str]] = {}
 signal_history: List[SignalResponse] = []
 
 from graham import GrahamAnalyzer, ValuationEngine, SignalGenerator
+from telegram_bot import TradingSignalsBot
+
+
+# ===== BACKGROUND SERVICES =====
+
+def start_bot_background():
+    """Start Telegram bot in background thread"""
+    try:
+        logger.info("Initializing Telegram bot...")
+        bot = TradingSignalsBot(TELEGRAM_BOT_TOKEN, API_BASE_URL)
+        logger.info("Starting bot polling...")
+        bot.run()
+    except Exception as e:
+        logger.error(f"Error running bot: {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background services on app startup"""
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("TELEGRAM_BOT_TOKEN not set - bot will not start")
+        return
+    
+    logger.info("Starting Telegram bot in background thread...")
+    bot_thread = threading.Thread(target=start_bot_background, daemon=True)
+    bot_thread.start()
+    logger.info("Bot thread started successfully")
 
 
 # ===== ENDPOINTS =====
